@@ -3,14 +3,15 @@
 import json
 import unittest
 
-from mock import patch, Mock
+from mock import patch
 
-from slacker import Channels
+from slacker import Channels, Response
 
 
 class TestUtils(unittest.TestCase):
-    @patch('slacker.requests')
-    def test_get_channel_id(self, mock_requests):
+
+    @patch('slacker.BaseAPI._request')
+    def test_get_channel_id(self, mock_request):
         text = {
             'ok': 'true',
             'channels': [
@@ -20,8 +21,8 @@ class TestUtils(unittest.TestCase):
         }
         json_to_text = json.dumps(text)
 
-        mock_requests.get.return_value = Mock(
-            status_code=200, text=json_to_text,
+        mock_request.return_value = Response(
+            json_to_text,
         )
 
         channels = Channels(token='aaa')
@@ -30,8 +31,8 @@ class TestUtils(unittest.TestCase):
             'C111', channels.get_channel_id('general')
         )
 
-    @patch('slacker.requests')
-    def test_get_channel_id_without_channel(self, mock_requests):
+    @patch('slacker.BaseAPI._request')
+    def test_get_channel_id_without_channel(self, mock_request):
         text = {
             'ok': 'true',
             'channels': [
@@ -41,8 +42,8 @@ class TestUtils(unittest.TestCase):
         }
         json_to_text = json.dumps(text)
 
-        mock_requests.get.return_value = Mock(
-            status_code=200, text=json_to_text,
+        mock_request.return_value = Response(
+            json_to_text,
         )
 
         channels = Channels(token='aaa')
