@@ -8,3 +8,5 @@ dist
 slacker.egg-info
 .tox
 build/
+.cache/
+slacker_asyncio.egg-info/
