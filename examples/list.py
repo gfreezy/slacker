@@ -5,17 +5,18 @@
 # https://api.slack.com/methods
 
 import os
+import asyncio
 from slacker import Slacker
 
 
-def list_slack():
+async def list_slack():
     """List channels & users in slack."""
     try:
         token = os.environ['SLACK_TOKEN']
         slack = Slacker(token)
 
         # Get channel list
-        response = slack.channels.list()
+        response = await slack.channels.list()
         channels = response.body['channels']
         for channel in channels:
             print channel['id'], channel['name']
@@ -24,7 +25,7 @@ def list_slack():
         print
 
         # Get users list
-        response = slack.users.list()
+        response = await slack.users.list()
         users = response.body['members']
         for user in users:
             if not user['deleted']:
@@ -36,4 +37,5 @@ def list_slack():
 
 
 if __name__ == '__main__':
-    list_slack()
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(list_slack())

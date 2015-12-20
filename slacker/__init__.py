@@ -14,10 +14,9 @@
 
 import json
 
-import requests
-
 import time
-
+import aiohttp
+import asyncio
 from slacker.utils import get_item_id_by_name
 
 
@@ -42,6 +41,7 @@ class Error(Exception):
 
 
 class Response(object):
+
     def __init__(self, body):
         self.raw = body
         self.body = json.loads(body)
@@ -58,27 +58,33 @@ class BaseAPI(object):
         self.token = token
         self.timeout = timeout
         self.proxies = proxies
-        self.session = session
+        self._session = session
         self.rate_limit_retries = rate_limit_retries
 
-    def _request(self, method, api, **kwargs):
+    @property
+    def session(self):
+        if not self._session:
+            self._session = aiohttp.ClientSession()
+        return self._session
+
+    async def _request(self, method, api, **kwargs):
         if self.token:
             kwargs.setdefault('params', {})['token'] = self.token
 
         # while we have rate limit retries left, fetch the resource and back
         # off as Slack's HTTP response suggests
         for retry_num in range(self.rate_limit_retries):
-            response = method(API_BASE_URL.format(api=api),
+            response = await method(API_BASE_URL.format(api=api),
                               timeout=self.timeout,
                               proxies=self.proxies,
                               **kwargs)
 
-            if response.status_code == requests.codes.ok:
+            if response.status == 200:
                 break
 
             # handle HTTP 429 as documented at
             # https://api.slack.com/docs/rate-limits
-            elif response.status_code == requests.codes.too_many: # HTTP 429
+            elif response.status == 429: # HTTP 429
                 time.sleep(int(response.headers.get('retry-after', DEFAULT_WAIT)))
                 continue
 
@@ -94,14 +100,14 @@ class BaseAPI(object):
                               **kwargs)
             response.raise_for_status()
 
-        response = Response(response.text)
+        text = await response.text()
+        response = Response(text)
         if not response.successful:
             raise Error(response.error)
 
         return response
 
     def _session_get(self, url, params=None, **kwargs):
-        kwargs.setdefault('allow_redirects', True)
         return self.session.request(
             method='get', url=url, params=params, **kwargs
         )
@@ -112,16 +118,10 @@ class BaseAPI(object):
         )
 
     def get(self, api, **kwargs):
-        return self._request(
-            self._session_get if self.session else requests.get,
-            api, **kwargs
-        )
+        return self._request(self._session_get, api, **kwargs)
 
     def post(self, api, **kwargs):
-        return self._request(
-            self._session_post if self.session else requests.post,
-            api, **kwargs
-        )
+        return self._request(self._session_post, api, **kwargs)
 
 
 class API(BaseAPI):
@@ -349,7 +349,6 @@ class Chat(BaseAPI):
                      parse=None, link_names=None, attachments=None,
                      unfurl_links=None, unfurl_media=None, icon_url=None,
                      icon_emoji=None, thread_ts=None):
-
         # Ensure attachments are json encoded
         if attachments:
             if isinstance(attachments, list):
@@ -449,7 +448,7 @@ class IM(BaseAPI):
                             'oldest': oldest,
                             'count': count,
                             'inclusive': inclusive,
-                            'unreads' : int(unreads)
+                            'unreads': int(unreads)
                         })
 
     def replies(self, channel, thread_ts):
@@ -500,6 +499,7 @@ class MPIM(BaseAPI):
 
 
 class Search(BaseAPI):
+
     def all(self, query, sort=None, sort_dir=None, highlight=None, count=None,
             page=None):
         return self.get('search.all',
@@ -995,8 +995,8 @@ class IncomingWebhook(object):
         if not self.url:
             raise Error('URL for incoming webhook is undefined')
 
-        return requests.post(self.url, data=json.dumps(data),
-                             timeout=self.timeout, proxies=self.proxies)
+        return aiohttp.post(self.url, data=json.dumps(data),
+                            timeout=self.timeout, proxies=self.proxies)
 
 
 class Slacker(object):

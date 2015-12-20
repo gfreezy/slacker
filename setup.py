@@ -2,14 +2,14 @@ from setuptools import setup
 
 
 setup(
-    name='slacker',
+    name='slacker-asyncio',
     version='0.9.60',
     packages=['slacker'],
-    description='Slack API client',
-    author='Oktay Sancak',
-    author_email='oktaysancak@gmail.com',
-    url='http://github.com/os/slacker/',
-    install_requires=['requests >= 2.2.1'],
+    description='Slack API asyncio client based on os\'s slacker',
+    author='gfreezy',
+    author_email='gfreezy@gmail.com',
+    url='http://github.com/gfreezy/slacker-asyncio/',
+    install_requires=['aiohttp ~= 3.0.5'],
     license='http://www.apache.org/licenses/LICENSE-2.0',
     test_suite='tests',
     classifiers=[
@@ -17,13 +17,7 @@ setup(
         'License :: OSI Approved :: Apache Software License',
         'Natural Language :: English',
         'Programming Language :: Python',
-        'Programming Language :: Python :: 2.6',
-        'Programming Language :: Python :: 2.7',
-        'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.3',
-        'Programming Language :: Python :: 3.4',
-        'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6'
     ],
-    keywords='slack api'
+    keywords='slack api asyncio'
 )

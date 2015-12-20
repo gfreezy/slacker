@@ -5,16 +5,17 @@
 # https://api.slack.com/methods
 
 import os
+import asyncio
 from slacker import Slacker
 
 
-def post_slack():
+async def post_slack():
     """Post slack message."""
     try:
         token = os.environ['SLACK_TOKEN']
         slack = Slacker(token)
 
-        obj = slack.chat.post_message(
+        obj = await slack.chat.post_message(
             channel='#general',
             text='',
             as_user=True,
@@ -27,4 +28,5 @@ def post_slack():
 
 
 if __name__ == '__main__':
-    post_slack()
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(post_slack())
