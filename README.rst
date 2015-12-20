@@ -50,9 +50,9 @@ Documentation
 https://api.slack.com/methods
 
 
-.. |build status| image:: https://img.shields.io/travis/os/slacker.svg
-.. _build status: http://travis-ci.org/os/slacker
-.. |pypi| image:: https://img.shields.io/pypi/v/Slacker.svg
-.. _pypi: https://pypi.python.org/pypi/slacker/
-.. |pypi downloads| image:: https://img.shields.io/pypi/dm/Slacker.svg
-.. _pypi downloads: https://pypi.python.org/pypi/slacker/
+.. |build status| image:: https://img.shields.io/travis/gfreezy/slacker-asyncio.svg
+.. _build status: http://travis-ci.org/gfreezy/slacker-asyncio
+.. |pypi| image:: https://img.shields.io/pypi/v/Slacker-asyncio.svg
+.. _pypi: https://pypi.python.org/pypi/slacker-asyncio/
+.. |pypi downloads| image:: https://img.shields.io/pypi/dm/Slacker-asyncio.svg
+.. _pypi downloads: https://pypi.python.org/pypi/slacker-asyncio/
