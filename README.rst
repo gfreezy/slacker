@@ -1,7 +1,7 @@
 =======
 Slacker-asyncio
 =======
-
+|version|_
 |pypi|_
 |build status|_
 |pypi downloads|_
@@ -49,7 +49,8 @@ Documentation
 
 https://api.slack.com/methods
 
-
+.. |version| image:: https://img.shields.io/pypi/pyversions/Slacker-asyncio.svg
+.. _version: https://pypi.python.org/pypi/slacker-asyncio/
 .. |build status| image:: https://img.shields.io/travis/gfreezy/slacker-asyncio.svg
 .. _build status: http://travis-ci.org/gfreezy/slacker-asyncio
 .. |pypi| image:: https://img.shields.io/pypi/v/Slacker-asyncio.svg
