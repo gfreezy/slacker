@@ -67,7 +67,8 @@ class BaseAPI(object):
             self._session = aiohttp.ClientSession()
         return self._session
 
-    async def _request(self, method, api, **kwargs):
+    @asyncio.coroutine
+    def _request(self, method, api, **kwargs):
         if self.token:
             kwargs.setdefault('params', {})['token'] = self.token
 
