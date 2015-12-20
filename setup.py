@@ -3,13 +3,13 @@ from setuptools import setup
 
 setup(
     name='slacker',
-    version='0.8.6',
+    version='0.8.7',
     packages=['slacker'],
     description='Slack API client',
     author='Oktay Sancak',
     author_email='oktaysancak@gmail.com',
     url='http://github.com/os/slacker/',
-    install_requires=['requests >= 2.2.1'],
+    install_requires=['aiohttp==0.19.0'],
     license='http://www.apache.org/licenses/LICENSE-2.0',
     test_suite='tests',
     classifiers=(
