@@ -1,6 +1,6 @@
-=======
+==================
 Slacker-asyncio
-=======
+==================
 |version|_
 |pypi|_
 |build status|_
@@ -10,7 +10,7 @@ About
 =====
 
 Slacker-asyncio is a full-featured Python interface for the `Slack API
-<https://api.slack.com/>`_. Slacker is a fork of (slacker)[https://github.com/os/slacker]
+<https://api.slack.com/>`_. Slacker is a fork of `slacker <https://github.com/os/slacker>`_
 to asyncio.
 
 Examples
