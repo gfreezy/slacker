@@ -60,14 +60,15 @@ class BaseAPI(object):
 
         return self._session
 
-    async def _request(self, method, api, **kwargs):
+    @asyncio.coroutine
+    def _request(self, method, api, **kwargs):
         if self.token:
             kwargs.setdefault('params', {})['token'] = self.token
 
-        resp = await asyncio.wait_for(method(API_BASE_URL.format(api=api),
+        resp = yield from asyncio.wait_for(method(API_BASE_URL.format(api=api),
                                              **kwargs),
                                       self.timeout)
-        text = await resp.text()
+        text = yield from resp.text()
         if resp.status != 200:
             raise Error(text)
 
