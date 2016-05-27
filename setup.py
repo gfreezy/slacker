@@ -3,13 +3,13 @@ from setuptools import setup
 
 setup(
     name='slacker-asyncio',
-    version='0.8.6',
+    version='0.8.7',
     packages=['slacker'],
     description='Slack API client',
     author='gfreezy',
     author_email='gfreezy@gmail.com',
     url='http://github.com/gfreezy/slacker-asyncio/',
-    install_requires=['aiohttp==0.19.0'],
+    install_requires=['aiohttp==0.21.6'],
     license='http://www.apache.org/licenses/LICENSE-2.0',
     test_suite='tests',
     classifiers=(
