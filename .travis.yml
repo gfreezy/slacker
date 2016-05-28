@@ -1,15 +1,20 @@
 language: python
-
 sudo: false
 env:
-    - TOXENV=py34
-    - TOXENV=py35
-
+- TOXENV=py34
+- TOXENV=py35
 python:
-  - 3.5
-
+- 3.5
 install:
-    - travis_retry pip install tox
-
+- travis_retry pip install tox
 script:
-    - travis_retry tox
+- travis_retry tox
+deploy:
+  provider: pypi
+  user: gfreezy
+  password:
+    secure: KQfwnkIFPdBODB5RzFBVW3d67kRtSI/csVNWxNMdmduonxQvzpiL141XEMZGCqGbD6JckYZXGcNkCHzpxVFW3GJoai60qzDbmfRNFkGr98A8n01t32l1aVJWm1QGCaF+dkmLD4+4Zpy7Fl7FIvKXUFbwcp1Ed5sQZHXUVp9o4gMbgqfSfAsdV/joKm4BOfvSFO5BT4lmqlGxgiCUDqLxaE9lsysz1rnLftDS4Kyl2RQH7TebxxX/1WgPJaykeENpadhn1hxCSM63k8jvunZ0g5GwWG/NAlIJQ3aTzAc26bnWojG0oxFKuhaVxeObb6IU2ZaNhqlizoP2PrtwomzPWvWiZwynmcqDoVRRJ90QXjaoyRz2UH2BA3wiwaSJ6izR25p7VtPYD92WPeIJ4BTHIA7CwJcDl6OVvGLCaepn+k2CFxwrcrPVLgBw7lHEW8GqGaTF2faKPuC9qcQJZ+JPSE82wH+OK0Q5SZJX6R63j2Oos2FIzGO6v6U3CCmSCGzF9m+2k5z+MJEL0+A80sfdCTKsDftZKKd3qHnvt7DwINCg3SmfcAHD/78mHZyvBZHgN6shocYXOgS19UGcv/Gvdgmgv4cMLzeZanW2z59oJjy4TGX4QqQL2JXkzgc5oL3G8vb6R+cAPdQE/XHVZH5EiWBrczZPs/yRUPkVCgs+lJM=
+  on:
+    tags: true
+    distributions: sdist bdist_wheel
+    repo: gfreezy/slacker-asyncio
