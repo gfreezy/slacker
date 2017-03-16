@@ -82,6 +82,7 @@ class BaseAPI(object):
         return self._request(self.session.get, api, **kwargs)
 
     def post(self, api, **kwargs):
+        kwargs = {key:value for key,value in kwargs.items() if value is not None}
         return self._request(self.session.post, api, **kwargs)
 
 
