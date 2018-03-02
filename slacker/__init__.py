@@ -13,11 +13,7 @@
 # limitations under the License.
 
 import json
-<<<<<<< HEAD
-=======
-
 import time
->>>>>>> keep-update-date
 import aiohttp
 import asyncio
 from slacker.utils import get_item_id_by_name
@@ -56,18 +52,6 @@ class Response(object):
 
 
 class BaseAPI(object):
-<<<<<<< HEAD
-
-    def __init__(self, token=None, timeout=DEFAULT_TIMEOUT):
-        self.token = token
-        self.timeout = timeout
-        self._session = None
-
-    def __del__(self):
-        if self._session:
-            self._session.close()
-            self._session = None
-=======
     def __init__(self, token=None, timeout=DEFAULT_TIMEOUT, proxies=None,
                  session=None, rate_limit_retries=DEFAULT_RETRIES):
         self.token = token
@@ -75,32 +59,17 @@ class BaseAPI(object):
         self.proxies = proxies
         self._session = session
         self.rate_limit_retries = rate_limit_retries
->>>>>>> keep-update-date
 
     @property
     def session(self):
         if not self._session:
             self._session = aiohttp.ClientSession()
-<<<<<<< HEAD
-
-=======
->>>>>>> keep-update-date
         return self._session
 
-    @asyncio.coroutine
-    def _request(self, method, api, **kwargs):
+    async def _request(self, method, api, **kwargs):
         if self.token:
             kwargs.setdefault('params', {})['token'] = self.token
 
-<<<<<<< HEAD
-        resp = yield from asyncio.wait_for(method(API_BASE_URL.format(api=api),
-                                             **kwargs),
-                                      self.timeout)
-        text = yield from resp.text()
-        if resp.status != 200:
-            raise Error(text)
-
-=======
         # while we have rate limit retries left, fetch the resource and back
         # off as Slack's HTTP response suggests
         for retry_num in range(self.rate_limit_retries):
@@ -131,7 +100,6 @@ class BaseAPI(object):
             response.raise_for_status()
 
         text = await response.text()
->>>>>>> keep-update-date
         response = Response(text)
         if not response.successful:
             raise Error(response.error)
@@ -149,17 +117,10 @@ class BaseAPI(object):
         )
 
     def get(self, api, **kwargs):
-<<<<<<< HEAD
-        return self._request(self.session.get, api, **kwargs)
-
-    def post(self, api, **kwargs):
-        return self._request(self.session.post, api, **kwargs)
-=======
         return self._request(self._session_get, api, **kwargs)
 
     def post(self, api, **kwargs):
         return self._request(self._session_post, api, **kwargs)
->>>>>>> keep-update-date
 
 
 class API(BaseAPI):
@@ -386,12 +347,7 @@ class Chat(BaseAPI):
     def post_message(self, channel, text=None, username=None, as_user=None,
                      parse=None, link_names=None, attachments=None,
                      unfurl_links=None, unfurl_media=None, icon_url=None,
-<<<<<<< HEAD
-                     icon_emoji=None):
-
-=======
                      icon_emoji=None, thread_ts=None):
->>>>>>> keep-update-date
         # Ensure attachments are json encoded
         if attachments:
             if isinstance(attachments, list):
@@ -1039,11 +995,7 @@ class IncomingWebhook(object):
             raise Error('URL for incoming webhook is undefined')
 
         return aiohttp.post(self.url, data=json.dumps(data),
-<<<<<<< HEAD
-                            timeout=self.timeout)
-=======
                             timeout=self.timeout, proxies=self.proxies)
->>>>>>> keep-update-date
 
 
 class Slacker(object):
