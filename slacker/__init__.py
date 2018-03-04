@@ -13,19 +13,26 @@
 # limitations under the License.
 
 import json
+import time
 import aiohttp
 import asyncio
 from slacker.utils import get_item_id_by_name
 
 
+__version__ = '0.9.60'
+
 API_BASE_URL = 'https://slack.com/api/{api}'
 DEFAULT_TIMEOUT = 10
-
+DEFAULT_RETRIES = 0
+# seconds to wait after a 429 error if Slack's API doesn't provide one
+DEFAULT_WAIT = 20
 
 __all__ = ['Error', 'Response', 'BaseAPI', 'API', 'Auth', 'Users', 'Groups',
            'Channels', 'Chat', 'IM', 'IncomingWebhook', 'Search', 'Files',
            'Stars', 'Emoji', 'Presence', 'RTM', 'Team', 'Reactions', 'Pins',
-           'UserGroups', 'UserGroupsUsers', 'MPIM', 'OAuth', 'Slacker']
+           'UserGroups', 'UserGroupsUsers', 'MPIM', 'OAuth', 'DND', 'Bots',
+           'FilesComments', 'Reminders', 'TeamProfile', 'UsersProfile',
+           'IDPGroups', 'Apps', 'AppsPermissions', 'Slacker']
 
 
 class Error(Exception):
@@ -40,49 +47,77 @@ class Response(object):
         self.successful = self.body['ok']
         self.error = self.body.get('error')
 
+    def __str__(self):
+        return json.dumps(self.body)
+
 
 class BaseAPI(object):
-
-    def __init__(self, token=None, timeout=DEFAULT_TIMEOUT):
-        self.token = token
+    def __init__(self, token=None, timeout=DEFAULT_TIMEOUT, proxy=None,
+                 session=None, rate_limit_retries=DEFAULT_RETRIES):
+        self.token_ = token
         self.timeout = timeout
-        self._session = None
+        self.proxy = proxy
+        self.session = session
+        self.rate_limit_retries = rate_limit_retries
 
-    def __del__(self):
-        if self._session:
-            self._session.close()
-            self._session = None
+    async def _request(self, method, api, **kwargs):
+        kwargs['data'] = {k: v for k, v in kwargs.get('data', {}).items() if v}
+        kwargs['params'] = {k: v for k, v in kwargs.get('params', {}).items() if v}
 
-    @property
-    def session(self):
-        if not self._session:
-            self._session = aiohttp.ClientSession()
+        if self.token_:
+            kwargs.setdefault('params', {})['token'] = self.token_
 
-        return self._session
+        # while we have rate limit retries left, fetch the resource and back
+        # off as Slack's HTTP response suggests
+        for _ in range(self.rate_limit_retries):
+            response = await method(API_BASE_URL.format(api=api),
+                              timeout=self.timeout,
+                              proxy=self.proxy,
+                              **kwargs)
 
-    @asyncio.coroutine
-    def _request(self, method, api, **kwargs):
-        if self.token:
-            kwargs.setdefault('params', {})['token'] = self.token
+            if response.status == 200:
+                break
 
-        resp = yield from asyncio.wait_for(method(API_BASE_URL.format(api=api),
-                                             **kwargs),
-                                      self.timeout)
-        text = yield from resp.text()
-        if resp.status != 200:
-            raise Error(text)
+            # handle HTTP 429 as documented at
+            # https://api.slack.com/docs/rate-limits
+            elif response.status == 429: # HTTP 429
+                time.sleep(int(response.headers.get('retry-after', DEFAULT_WAIT)))
+                continue
 
+            else:
+                response.raise_for_status()
+
+        else:
+            # with no retries left, make one final attempt to fetch the resource,
+            # but do not handle too_many status differently
+            response = await method(API_BASE_URL.format(api=api),
+                              timeout=self.timeout,
+                              proxy=self.proxy,
+                              **kwargs)
+            response.raise_for_status()
+
+        text = await response.text()
         response = Response(text)
         if not response.successful:
             raise Error(response.error)
 
         return response
 
+    def _session_get(self, url, params=None, **kwargs):
+        return self.session.request(
+            method='get', url=url, params=params, **kwargs
+        )
+
+    def _session_post(self, url, data=None, **kwargs):
+        return self.session.request(
+            method='post', url=url, data=data, **kwargs
+        )
+
     def get(self, api, **kwargs):
-        return self._request(self.session.get, api, **kwargs)
+        return self._request(self._session_get, api, **kwargs)
 
     def post(self, api, **kwargs):
-        return self._request(self.session.post, api, **kwargs)
+        return self._request(self._session_post, api, **kwargs)
 
 
 class API(BaseAPI):
@@ -97,13 +132,62 @@ class Auth(BaseAPI):
     def test(self):
         return self.get('auth.test')
 
+    def revoke(self, test=True):
+        return self.post('auth.revoke', data={'test': int(test)})
+
+
+class UsersProfile(BaseAPI):
+    def get(self, user=None, include_labels=False):
+        return super(UsersProfile, self).get(
+            'users.profile.get',
+            params={'user': user, 'include_labels': int(include_labels)}
+        )
+
+    def set(self, user=None, profile=None, name=None, value=None):
+        return self.post('users.profile.set',
+                         data={
+                             'user': user,
+                             'profile': profile,
+                             'name': name,
+                             'value': value
+                         })
+
+
+class UsersAdmin(BaseAPI):
+    def invite(self, email, channels=None, first_name=None,
+               last_name=None, resend=True):
+        return self.post('users.admin.invite',
+                         params={
+                             'email': email,
+                             'channels': channels,
+                             'first_name': first_name,
+                             'last_name': last_name,
+                             'resend': resend
+                         })
+
 
 class Users(BaseAPI):
+    def __init__(self, *args, **kwargs):
+        super(Users, self).__init__(*args, **kwargs)
+        self._profile = UsersProfile(*args, **kwargs)
+        self._admin = UsersAdmin(*args, **kwargs)
+
+    @property
+    def profile(self):
+        return self._profile
+
+    @property
+    def admin(self):
+        return self._admin
+
     def info(self, user):
         return self.get('users.info', params={'user': user})
 
     def list(self, presence=False):
         return self.get('users.list', params={'presence': int(presence)})
+
+    def identity(self):
+        return self.get('users.identity')
 
     def set_active(self):
         return self.post('users.setActive')
@@ -112,7 +196,6 @@ class Users(BaseAPI):
         return self.get('users.getPresence', params={'user': user})
 
     def set_presence(self, presence):
-        assert presence in Presence.TYPES, 'Invalid presence type'
         return self.post('users.setPresence', data={'presence': presence})
 
     def get_user_id(self, user_name):
@@ -163,6 +246,10 @@ class Groups(BaseAPI):
         return self.post('groups.rename',
                          data={'channel': channel, 'name': name})
 
+    def replies(self, channel, thread_ts):
+        return self.get('groups.replies',
+                        params={'channel': channel, 'thread_ts': thread_ts})
+
     def archive(self, channel):
         return self.post('groups.archive', data={'channel': channel})
 
@@ -191,19 +278,21 @@ class Channels(BaseAPI):
     def info(self, channel):
         return self.get('channels.info', params={'channel': channel})
 
-    def list(self, exclude_archived=None):
+    def list(self, exclude_archived=None, exclude_members=None):
         return self.get('channels.list',
-                        params={'exclude_archived': exclude_archived})
+                        params={'exclude_archived': exclude_archived,
+                                'exclude_members': exclude_members})
 
     def history(self, channel, latest=None, oldest=None, count=None,
-                inclusive=None):
+                inclusive=False, unreads=False):
         return self.get('channels.history',
                         params={
                             'channel': channel,
                             'latest': latest,
                             'oldest': oldest,
                             'count': count,
-                            'inclusive': inclusive
+                            'inclusive': int(inclusive),
+                            'unreads': int(unreads)
                         })
 
     def mark(self, channel, ts):
@@ -228,6 +317,10 @@ class Channels(BaseAPI):
         return self.post('channels.rename',
                          data={'channel': channel, 'name': name})
 
+    def replies(self, channel, thread_ts):
+        return self.get('channels.replies',
+                        params={'channel': channel, 'thread_ts': thread_ts})
+
     def archive(self, channel):
         return self.post('channels.archive', data={'channel': channel})
 
@@ -248,11 +341,10 @@ class Channels(BaseAPI):
 
 
 class Chat(BaseAPI):
-    def post_message(self, channel, text, username=None, as_user=None,
+    def post_message(self, channel, text=None, username=None, as_user=None,
                      parse=None, link_names=None, attachments=None,
                      unfurl_links=None, unfurl_media=None, icon_url=None,
-                     icon_emoji=None):
-
+                     icon_emoji=None, thread_ts=None):
         # Ensure attachments are json encoded
         if attachments:
             if isinstance(attachments, list):
@@ -270,15 +362,73 @@ class Chat(BaseAPI):
                              'unfurl_links': unfurl_links,
                              'unfurl_media': unfurl_media,
                              'icon_url': icon_url,
-                             'icon_emoji': icon_emoji
+                             'icon_emoji': icon_emoji,
+                             'thread_ts': thread_ts
                          })
 
-    def update(self, channel, ts, text):
-        self.post('chat.update',
-                  data={'channel': channel, 'ts': ts, 'text': text})
+    def me_message(self, channel, text):
+        return self.post('chat.meMessage',
+                         data={'channel': channel, 'text': text})
 
-    def delete(self, channel, ts):
-        self.post('chat.delete', data={'channel': channel, 'ts': ts})
+    def command(self, channel, command, text):
+        return self.post('chat.command',
+                         data={
+                             'channel': channel,
+                             'command': command,
+                             'text': text
+                         })
+
+    def update(self, channel, ts, text, attachments=None, parse=None,
+               link_names=False, as_user=None):
+        # Ensure attachments are json encoded
+        if attachments is not None and isinstance(attachments, list):
+            attachments = json.dumps(attachments)
+        return self.post('chat.update',
+                         data={
+                             'channel': channel,
+                             'ts': ts,
+                             'text': text,
+                             'attachments': attachments,
+                             'parse': parse,
+                             'link_names': int(link_names),
+                             'as_user': as_user,
+                         })
+
+    def delete(self, channel, ts, as_user=False):
+        return self.post('chat.delete',
+                         data={
+                             'channel': channel,
+                             'ts': ts,
+                             'as_user': as_user
+                         })
+
+    def post_ephemeral(self, channel, text, user, as_user=None,
+                       attachments=None, link_names=None, parse=None):
+        # Ensure attachments are json encoded
+        if attachments is not None and isinstance(attachments, list):
+            attachments = json.dumps(attachments)
+        return self.post('chat.postEphemeral',
+                         data={
+                             'channel': channel,
+                             'text': text,
+                             'user': user,
+                             'as_user': as_user,
+                             'attachments': attachments,
+                             'link_names': link_names,
+                             'parse': parse,
+                         })
+
+    def unfurl(self, channel, ts, unfurls, user_auth_message=None,
+               user_auth_required=False, user_auth_url=None):
+        return self.post('chat.unfurl',
+                         data={
+                             'channel': channel,
+                             'ts': ts,
+                             'unfurls': unfurls,
+                             'user_auth_message': user_auth_message,
+                             'user_auth_required': user_auth_required,
+                             'user_auth_url': user_auth_url,
+                         })
 
 
 class IM(BaseAPI):
@@ -286,15 +436,20 @@ class IM(BaseAPI):
         return self.get('im.list')
 
     def history(self, channel, latest=None, oldest=None, count=None,
-                inclusive=None):
+                inclusive=None, unreads=False):
         return self.get('im.history',
                         params={
                             'channel': channel,
                             'latest': latest,
                             'oldest': oldest,
                             'count': count,
-                            'inclusive': inclusive
+                            'inclusive': inclusive,
+                            'unreads': int(unreads)
                         })
+
+    def replies(self, channel, thread_ts):
+        return self.get('im.replies',
+                        params={'channel': channel, 'thread_ts': thread_ts})
 
     def mark(self, channel, ts):
         return self.post('im.mark', data={'channel': channel, 'ts': ts})
@@ -311,7 +466,7 @@ class MPIM(BaseAPI):
         if isinstance(users, (tuple, list)):
             users = ','.join(users)
 
-        return self.post('mpim.open', data={'user': users})
+        return self.post('mpim.open', data={'users': users})
 
     def close(self, channel):
         return self.post('mpim.close', data={'channel': channel})
@@ -333,6 +488,10 @@ class MPIM(BaseAPI):
                             'count': count,
                             'unreads': int(unreads)
                         })
+
+    def replies(self, channel, thread_ts):
+        return self.get('mpim.replies',
+                        params={'channel': channel, 'thread_ts': thread_ts})
 
 
 class Search(BaseAPI):
@@ -374,9 +533,31 @@ class Search(BaseAPI):
                         })
 
 
+class FilesComments(BaseAPI):
+    def add(self, file_, comment):
+        return self.post('files.comments.add',
+                         data={'file': file_, 'comment': comment})
+
+    def delete(self, file_, id):
+        return self.post('files.comments.delete',
+                         data={'file': file_, 'id': id})
+
+    def edit(self, file_, id, comment):
+        return self.post('files.comments.edit',
+                         data={'file': file_, 'id': id, 'comment': comment})
+
+
 class Files(BaseAPI):
+    def __init__(self, *args, **kwargs):
+        super(Files, self).__init__(*args, **kwargs)
+        self._comments = FilesComments(*args, **kwargs)
+
+    @property
+    def comments(self):
+        return self._comments
+
     def list(self, user=None, ts_from=None, ts_to=None, types=None,
-             count=None, page=None):
+             count=None, page=None, channel=None):
         return self.get('files.list',
                         params={
                             'user': user,
@@ -384,38 +565,70 @@ class Files(BaseAPI):
                             'ts_to': ts_to,
                             'types': types,
                             'count': count,
-                            'page': page
+                            'page': page,
+                            'channel': channel
                         })
 
     def info(self, file_, count=None, page=None):
         return self.get('files.info',
                         params={'file': file_, 'count': count, 'page': page})
 
-    def upload(self, file_, content=None, filetype=None, filename=None,
+    def upload(self, file_=None, content=None, filetype=None, filename=None,
                title=None, initial_comment=None, channels=None):
-        with open(file_, 'rb') as f:
-            if isinstance(channels, (tuple, list)):
-                channels = ','.join(channels)
+        if isinstance(channels, (tuple, list)):
+            channels = ','.join(channels)
 
-            return self.post('files.upload',
-                             data={
-                                 'content': content,
-                                 'filetype': filetype,
-                                 'filename': filename,
-                                 'title': title,
-                                 'initial_comment': initial_comment,
-                                 'channels': channels
-                             },
-                             files={'file': f})
+        data = {
+            'content': content,
+            'filetype': filetype,
+            'filename': filename,
+            'title': title,
+            'initial_comment': initial_comment,
+            'channels': channels
+        }
+
+        if file_:
+            with open(file_, 'rb') as f:
+                return self.post('files.upload', data=data, files={'file': f})
+        else:
+            return self.post('files.upload', data=data)
 
     def delete(self, file_):
         return self.post('files.delete', data={'file': file_})
 
+    def revoke_public_url(self, file_):
+        return self.post('files.revokePublicURL', data={'file': file_})
+
+    def shared_public_url(self, file_):
+        return self.post('files.sharedPublicURL', data={'file': file_})
+
 
 class Stars(BaseAPI):
+    def add(self, file_=None, file_comment=None, channel=None, timestamp=None):
+        assert file_ or file_comment or channel
+
+        return self.post('stars.add',
+                         data={
+                             'file': file_,
+                             'file_comment': file_comment,
+                             'channel': channel,
+                             'timestamp': timestamp
+                         })
+
     def list(self, user=None, count=None, page=None):
         return self.get('stars.list',
                         params={'user': user, 'count': count, 'page': page})
+
+    def remove(self, file_=None, file_comment=None, channel=None, timestamp=None):
+        assert file_ or file_comment or channel
+
+        return self.post('stars.remove',
+                         data={
+                             'file': file_,
+                             'file_comment': file_comment,
+                             'channel': channel,
+                             'timestamp': timestamp
+                         })
 
 
 class Emoji(BaseAPI):
@@ -434,17 +647,56 @@ class Presence(BaseAPI):
 
 
 class RTM(BaseAPI):
-    def start(self):
-        return self.get('rtm.start')
+    def start(self, simple_latest=False, no_unreads=False, mpim_aware=False):
+        return self.get('rtm.start',
+                        params={
+                            'simple_latest': int(simple_latest),
+                            'no_unreads': int(no_unreads),
+                            'mpim_aware': int(mpim_aware),
+                        })
+
+    def connect(self):
+        return self.get('rtm.connect')
+
+
+class TeamProfile(BaseAPI):
+    def get(self, visibility=None):
+        return super(TeamProfile, self).get(
+            'team.profile.get',
+            params={'visibility': visibility}
+        )
 
 
 class Team(BaseAPI):
+    def __init__(self, *args, **kwargs):
+        super(Team, self).__init__(*args, **kwargs)
+        self._profile = TeamProfile(*args, **kwargs)
+
+    @property
+    def profile(self):
+        return self._profile
+
     def info(self):
         return self.get('team.info')
 
     def access_logs(self, count=None, page=None):
         return self.get('team.accessLogs',
                         params={'count': count, 'page': page})
+
+    def integration_logs(self, service_id=None, app_id=None, user=None,
+                         change_type=None, count=None, page=None):
+        return self.get('team.integrationLogs',
+                        params={
+                            'service_id': service_id,
+                            'app_id': app_id,
+                            'user': user,
+                            'change_type': change_type,
+                            'count': count,
+                            'page': page,
+                        })
+
+    def billable_info(self, user=None):
+        return self.get('team.billableInfo', params={'user': user})
 
 
 class Reactions(BaseAPI):
@@ -629,6 +881,58 @@ class UserGroups(BaseAPI):
         })
 
 
+class DND(BaseAPI):
+    def team_info(self, users=None):
+        if isinstance(users, (tuple, list)):
+            users = ','.join(users)
+
+        return self.get('dnd.teamInfo', params={'users': users})
+
+    def set_snooze(self, num_minutes):
+        return self.post('dnd.setSnooze', data={'num_minutes': num_minutes})
+
+    def info(self, user=None):
+        return self.get('dnd.info', params={'user': user})
+
+    def end_dnd(self):
+        return self.post('dnd.endDnd')
+
+    def end_snooze(self):
+        return self.post('dnd.endSnooze')
+
+
+class Reminders(BaseAPI):
+    def add(self, text, time, user=None):
+        return self.post('reminders.add', data={
+            'text': text,
+            'time': time,
+            'user': user,
+        })
+
+    def complete(self, reminder):
+        return self.post('reminders.complete', data={'reminder': reminder})
+
+    def delete(self, reminder):
+        return self.post('reminders.delete', data={'reminder': reminder})
+
+    def info(self, reminder):
+        return self.get('reminders.info', params={'reminder': reminder})
+
+    def list(self):
+        return self.get('reminders.list')
+
+
+class Bots(BaseAPI):
+    def info(self, bot=None):
+        return self.get('bots.info', params={'bot': bot})
+
+
+class IDPGroups(BaseAPI):
+    def list(self, include_users=False):
+        return self.get('idpgroups.list',
+                        params={'include_users': int(include_users)})
+
+
 class OAuth(BaseAPI):
     def access(self, client_id, client_secret, code, redirect_uri=None):
         return self.post('oauth.access',
@@ -639,11 +943,46 @@ class OAuth(BaseAPI):
                              'redirect_uri': redirect_uri
                          })
 
+    def token(self, client_id, client_secret, code, redirect_uri=None,
+              single_channel=None):
+        return self.post('oauth.token',
+                         data={
+                             'client_id': client_id,
+                             'client_secret': client_secret,
+                             'code': code,
+                             'redirect_uri': redirect_uri,
+                             'single_channel': single_channel,
+                         })
+
+
+class AppsPermissions(BaseAPI):
+    def info(self):
+        return self.get('apps.permissions.info')
+
+    def request(self, scopes, trigger_id):
+        return self.post('apps.permissions.request',
+                         data={
+                             scopes: ','.join(scopes),
+                             trigger_id: trigger_id,
+                         })
+
+
+class Apps(BaseAPI):
+    def __init__(self, *args, **kwargs):
+        super(Apps, self).__init__(*args, **kwargs)
+        self._permissions = AppsPermissions(*args, **kwargs)
+
+    @property
+    def permissions(self):
+        return self._permissions
+
 
 class IncomingWebhook(object):
-    def __init__(self, url=None, timeout=DEFAULT_TIMEOUT):
+    def __init__(self, url=None, session=None, timeout=DEFAULT_TIMEOUT, proxy=None):
         self.url = url
+        self.session = session
         self.timeout = timeout
+        self.proxy = proxy
 
     def post(self, data):
         """
@@ -653,32 +992,52 @@ class IncomingWebhook(object):
         if not self.url:
             raise Error('URL for incoming webhook is undefined')
 
-        return aiohttp.post(self.url, data=json.dumps(data),
-                            timeout=self.timeout)
+        return self.session.post(self.url, data=json.dumps(data),
+                            timeout=self.timeout, proxy=self.proxy)
 
 
 class Slacker(object):
     oauth = OAuth(timeout=DEFAULT_TIMEOUT)
 
     def __init__(self, token, incoming_webhook_url=None,
-                 timeout=DEFAULT_TIMEOUT):
-        self.im = IM(token=token, timeout=timeout)
-        self.api = API(token=token, timeout=timeout)
-        self.rtm = RTM(token=token, timeout=timeout)
-        self.auth = Auth(token=token, timeout=timeout)
-        self.chat = Chat(token=token, timeout=timeout)
-        self.team = Team(token=token, timeout=timeout)
-        self.pins = Pins(token=token, timeout=timeout)
-        self.mpim = MPIM(token=token, timeout=timeout)
-        self.users = Users(token=token, timeout=timeout)
-        self.files = Files(token=token, timeout=timeout)
-        self.stars = Stars(token=token, timeout=timeout)
-        self.emoji = Emoji(token=token, timeout=timeout)
-        self.search = Search(token=token, timeout=timeout)
-        self.groups = Groups(token=token, timeout=timeout)
-        self.channels = Channels(token=token, timeout=timeout)
-        self.presence = Presence(token=token, timeout=timeout)
-        self.reactions = Reactions(token=token, timeout=timeout)
-        self.usergroups = UserGroups(token=token, timeout=timeout)
-        self.incomingwebhook = IncomingWebhook(url=incoming_webhook_url,
-                                               timeout=timeout)
+                 timeout=DEFAULT_TIMEOUT, proxy=None,
+                 session=None, rate_limit_retries=DEFAULT_RETRIES):
+
+        if not session:
+            session = self.session = aiohttp.ClientSession()
+            
+        api_args = {
+            'token': token,
+            'timeout': timeout,
+            'proxy': proxy,
+            'session': session,
+            'rate_limit_retries': rate_limit_retries,
+        }
+        self.im = IM(**api_args)
+        self.api = API(**api_args)
+        self.dnd = DND(**api_args)
+        self.rtm = RTM(**api_args)
+        self.apps = Apps(**api_args)
+        self.auth = Auth(**api_args)
+        self.bots = Bots(**api_args)
+        self.chat = Chat(**api_args)
+        self.team = Team(**api_args)
+        self.pins = Pins(**api_args)
+        self.mpim = MPIM(**api_args)
+        self.users = Users(**api_args)
+        self.files = Files(**api_args)
+        self.stars = Stars(**api_args)
+        self.emoji = Emoji(**api_args)
+        self.search = Search(**api_args)
+        self.groups = Groups(**api_args)
+        self.channels = Channels(**api_args)
+        self.presence = Presence(**api_args)
+        self.reminders = Reminders(**api_args)
+        self.reactions = Reactions(**api_args)
+        self.idpgroups = IDPGroups(**api_args)
+        self.usergroups = UserGroups(**api_args)
+        self.incomingwebhook = IncomingWebhook(url=incoming_webhook_url, session=session,
+                                               timeout=timeout, proxy=proxy)
+
+    async def close(self):
+        self.session.close()
