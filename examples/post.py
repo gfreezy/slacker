@@ -21,10 +21,11 @@ async def post_slack():
             as_user=True,
             attachments=[{"pretext": "Subject",
                           "text": "Body"}])
-        print obj.successful, obj.__dict__['body']['channel'], obj.__dict__[
-            'body']['ts']
-    except KeyError, ex:
-        print 'Environment variable %s not set.' % str(ex)
+        print(obj.successful, obj.__dict__['body']['channel'], obj.__dict__[
+            'body']['ts'])
+        slack.close()
+    except KeyError as ex:
+        print('Environment variable %s not set.' % str(ex))
 
 
 if __name__ == '__main__':

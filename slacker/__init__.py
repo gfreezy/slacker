@@ -52,30 +52,27 @@ class Response(object):
 
 
 class BaseAPI(object):
-    def __init__(self, token=None, timeout=DEFAULT_TIMEOUT, proxies=None,
+    def __init__(self, token=None, timeout=DEFAULT_TIMEOUT, proxy=None,
                  session=None, rate_limit_retries=DEFAULT_RETRIES):
-        self.token = token
+        self.token_ = token
         self.timeout = timeout
-        self.proxies = proxies
-        self._session = session
+        self.proxy = proxy
+        self.session = session
         self.rate_limit_retries = rate_limit_retries
 
-    @property
-    def session(self):
-        if not self._session:
-            self._session = aiohttp.ClientSession()
-        return self._session
-
     async def _request(self, method, api, **kwargs):
-        if self.token:
-            kwargs.setdefault('params', {})['token'] = self.token
+        kwargs['data'] = {k: v for k, v in kwargs.get('data', {}).items() if v}
+        kwargs['params'] = {k: v for k, v in kwargs.get('params', {}).items() if v}
+
+        if self.token_:
+            kwargs.setdefault('params', {})['token'] = self.token_
 
         # while we have rate limit retries left, fetch the resource and back
         # off as Slack's HTTP response suggests
-        for retry_num in range(self.rate_limit_retries):
+        for _ in range(self.rate_limit_retries):
             response = await method(API_BASE_URL.format(api=api),
                               timeout=self.timeout,
-                              proxies=self.proxies,
+                              proxy=self.proxy,
                               **kwargs)
 
             if response.status == 200:
@@ -93,9 +90,9 @@ class BaseAPI(object):
         else:
             # with no retries left, make one final attempt to fetch the resource,
             # but do not handle too_many status differently
-            response = method(API_BASE_URL.format(api=api),
+            response = await method(API_BASE_URL.format(api=api),
                               timeout=self.timeout,
-                              proxies=self.proxies,
+                              proxy=self.proxy,
                               **kwargs)
             response.raise_for_status()
 
@@ -981,10 +978,11 @@ class Apps(BaseAPI):
 
 
 class IncomingWebhook(object):
-    def __init__(self, url=None, timeout=DEFAULT_TIMEOUT, proxies=None):
+    def __init__(self, url=None, session=None, timeout=DEFAULT_TIMEOUT, proxy=None):
         self.url = url
+        self.session = session
         self.timeout = timeout
-        self.proxies = proxies
+        self.proxy = proxy
 
     def post(self, data):
         """
@@ -994,22 +992,24 @@ class IncomingWebhook(object):
         if not self.url:
             raise Error('URL for incoming webhook is undefined')
 
-        return aiohttp.post(self.url, data=json.dumps(data),
-                            timeout=self.timeout, proxies=self.proxies)
+        return self.session.post(self.url, data=json.dumps(data),
+                            timeout=self.timeout, proxy=self.proxy)
 
 
 class Slacker(object):
     oauth = OAuth(timeout=DEFAULT_TIMEOUT)
 
     def __init__(self, token, incoming_webhook_url=None,
-                 timeout=DEFAULT_TIMEOUT, http_proxy=None, https_proxy=None,
+                 timeout=DEFAULT_TIMEOUT, proxy=None,
                  session=None, rate_limit_retries=DEFAULT_RETRIES):
 
-        proxies = self.__create_proxies(http_proxy, https_proxy)
+        if not session:
+            session = self.session = aiohttp.ClientSession()
+            
         api_args = {
             'token': token,
             'timeout': timeout,
-            'proxies': proxies,
+            'proxy': proxy,
             'session': session,
             'rate_limit_retries': rate_limit_retries,
         }
@@ -1036,13 +1036,8 @@ class Slacker(object):
         self.reactions = Reactions(**api_args)
         self.idpgroups = IDPGroups(**api_args)
         self.usergroups = UserGroups(**api_args)
-        self.incomingwebhook = IncomingWebhook(url=incoming_webhook_url,
-                                               timeout=timeout, proxies=proxies)
+        self.incomingwebhook = IncomingWebhook(url=incoming_webhook_url, session=session,
+                                               timeout=timeout, proxy=proxy)
 
-    def __create_proxies(self, http_proxy=None, https_proxy=None):
-        proxies = dict()
-        if http_proxy:
-            proxies['http'] = http_proxy
-        if https_proxy:
-            proxies['https'] = https_proxy
-        return proxies
+    async def close(self):
+        self.session.close()
