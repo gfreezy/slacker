@@ -20,22 +20,6 @@ Examples
     import asyncio
     from slacker import Slacker
 
-<<<<<<< HEAD
-    @asyncio.coroutine
-    def run():
-        slack = Slacker('<your-slack-api-token-goes-here>')
-
-        # Send a message to #general channel
-        yield from slack.chat.post_message('#general', 'Hello fellow slackers!', as_user=True)
-
-        # Get users list
-        response = yield from slack.users.list()
-        users = response.body['members']
-
-        # Upload a file
-        yield from slack.files.upload('hello.txt')
-
-=======
 
     async def run():
         with aiohttp.ClientSession() as session:
@@ -51,7 +35,6 @@ Examples
             # Upload a file
             await slack.files.upload('hello.txt')
 
->>>>>>> keep-update-date
     loop = asyncio.get_event_loop()
     loop.run_until_complete(run())
 
