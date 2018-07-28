@@ -7,7 +7,7 @@ name = "pypi"
 
 [packages]
 
-aiohttp = "~=3.0.5"
+aiohttp = ">=3.0.5"
 
 
 [dev-packages]
