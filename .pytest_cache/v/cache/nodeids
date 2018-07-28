@@ -1,0 +1,5 @@
+[
+  "tests/test_channels.py::TestUtils::test_get_channel_id",
+  "tests/test_channels.py::TestUtils::test_get_channel_id_without_channel",
+  "tests/test_utils.py::TestUtils::test_get_item_id_by_name"
+]
